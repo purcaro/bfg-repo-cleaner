@@ -30,6 +30,7 @@ import bfg.model.Tree
 import bfg.model.TreeSubtrees
 import org.eclipse.jgit.lib._
 import com.madgag.git.bfg.GitUtil._
+import com.madgag.git.bfg.cleaner.CommitNodeCleaner.Kit
 
 object ObjectIdCleaner {
 
@@ -38,10 +39,14 @@ object ObjectIdCleaner {
                     commitNodeCleaners: Seq[CommitNodeCleaner] = Seq.empty,
                     treeBlobsCleaners: Seq[Cleaner[TreeBlobs]] = Seq.empty,
                     treeSubtreesCleaners: Seq[Cleaner[TreeSubtrees]] = Seq.empty,
-                    // messageCleaners? - covers both Tag and Commits
+                    messageCleaner: Option[Cleaner[String]] = None,
                     objectChecker: Option[ObjectChecker] = None) {
 
-    lazy val commitNodeCleaner = CommitNodeCleaner.chain(commitNodeCleaners)
+    lazy val messageCommitNodeCleaner = messageCleaner.map { mc => new CommitNodeCleaner {
+      def fixer(kit: Kit) = c => c.copy(message = mc(c.message))
+    }}
+
+    lazy val commitNodeCleaner = CommitNodeCleaner.chain(commitNodeCleaners ++ messageCommitNodeCleaner)
 
     lazy val treeBlobsCleaner = Function.chain(treeBlobsCleaners)
 

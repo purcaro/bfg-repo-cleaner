@@ -83,6 +83,17 @@ class MainSpec extends Specification {
         run("--delete-folders bar --delete-files foo.txt")
       }
     }
+
+    "replace commit and tag message text" in new unpackedRepo("/sample-repos/replaceTextInMessage.git.zip") {
+      implicit val r = reader
+
+      val bannedTextFile = Path.createTempFile()
+      bannedTextFile.write("sausages==>cheese\n")
+
+      ensureRemovalOf(commitHistory(haveCommitWhereMessage(contain("sausages")).atLeastOnce)) {
+        run(s"--replace-message-text ${bannedTextFile.path}")
+      }
+    }
   }
 
   "Massive commit messages" should {
@@ -131,6 +142,10 @@ class unpackedRepo(filePath: String) extends Scope with MustThrownMatchers {
 
   def haveCommitWhereObjectIds(boom: Matcher[Traversable[ObjectId]])(implicit reader: ObjectReader): Matcher[RevCommit] = boom ^^ {
     (c: RevCommit) => c.getTree.walk().map(_.getObjectId(0)).toSeq
+  }
+
+  def haveCommitWhereMessage(boom: Matcher[String])(implicit reader: ObjectReader): Matcher[RevCommit] = boom ^^ {
+    (c: RevCommit) => c.getFullMessage
   }
 
   def haveRef(refName: String, objectIdMatcher: Matcher[ObjectId]): Matcher[Repository] = objectIdMatcher ^^ {

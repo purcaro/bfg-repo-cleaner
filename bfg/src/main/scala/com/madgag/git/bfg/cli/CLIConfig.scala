@@ -64,6 +64,9 @@ object CLIConfig {
         "string other than the default of '***REMOVED***'.") {
         (v: String, c: CLIConfig) => c.copy(textReplacementExpressions = Source.fromFile(v).getLines().filterNot(_.trim.isEmpty).toSeq)
       },
+      opt("rt", "replace-message-text", "<expressions-file>", "filter content of tag and commit messages, replacing matched text. Match expressions should be listed in the file, one expression per line") {
+        (v: String, c: CLIConfig) => c.copy(messageTextReplacementExpressions = Source.fromFile(v).getLines().filterNot(_.trim.isEmpty).toSeq)
+      },
       opt("fi", "filter-content-including", "<glob>", "do file-content filtering on files that match the specified expression (eg '*.{txt|properties}')") {
         (v: String, c: CLIConfig) => c.copy(filenameFilters = c.filenameFilters :+ Include(FileMatcher(v)))
       },
@@ -112,6 +115,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
                      filenameFilters: Seq[Filter[String]] = Nil,
                      filterSizeThreshold: Int = BlobTextModifier.DefaultSizeThreshold,
                      textReplacementExpressions: Traversable[String] = List.empty,
+                     messageTextReplacementExpressions: Traversable[String] = List.empty,
                      stripBlobsWithIds: Option[Set[ObjectId]] = None,
                      strictObjectChecking: Boolean = false,
                      sensitiveData: Option[Boolean] = None,
@@ -137,6 +141,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
   }
 
   lazy val lineModifier: Option[String => String] = TextReplacementConfig(textReplacementExpressions)
+  lazy val messageLineModifier: Option[String => String] = TextReplacementConfig(messageTextReplacementExpressions)
 
   lazy val filterContentPredicate: (FileName => Boolean) = f => IncExcExpression(filenameFilters) includes (f.string)
 
@@ -150,6 +155,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
         val threadLocalObjectDBResources = repo.getObjectDatabase.threadLocalResources
       }
   }
+
 
   lazy val privateDataRemoval = sensitiveData.getOrElse(Seq(fileDeletion, folderDeletion, blobTextModifier).flatten.nonEmpty)
 
@@ -191,7 +197,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
     Seq(blobsByIdRemover, blobRemover, fileDeletion, blobTextModifier).flatten
   }
 
-  lazy val definesNoWork = treeBlobCleaners.isEmpty && folderDeletion.isEmpty
+  lazy val definesNoWork = treeBlobCleaners.isEmpty && folderDeletion.isEmpty && messageLineModifier.isEmpty
 
   def objectIdCleanerConfig: ObjectIdCleaner.Config =
     ObjectIdCleaner.Config(
@@ -200,6 +206,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
       commitNodeCleaners,
       treeBlobCleaners,
       folderDeletion.toSeq,
+      messageLineModifier,
       objectChecker
     )
 

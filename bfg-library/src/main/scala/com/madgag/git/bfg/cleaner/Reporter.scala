@@ -103,12 +103,16 @@ class CLIReporter(repo: Repository) extends Reporter {
       println("\tm = modified commits (commit message or parents changed)")
       println("\t. = clean commits (no changes to file tree)\n")
 
+
       val firstModifiedCommit = commits.find(objectIdCleaner.isDirty).map(c => "First modified commit" -> c)
       val lastDirtyCommit = commits.reverse.find(c => objectIdCleaner.isDirty(c.getTree)).map(c => "Last dirty commit" -> c)
       val items = for { (desc, commit) <- firstModifiedCommit ++ lastDirtyCommit
                         (before, after) <- objectIdCleaner.substitution(commit)
       } yield (desc, before.shortName, after.shortName)
-      Tables.formatTable(("", "Before", "After"), items.toSeq).map("\t" + _).foreach(println)
+
+      if (items.nonEmpty) {
+        Tables.formatTable(("", "Before", "After"), items.toSeq).map("\t" + _).foreach(println)
+      }
     }
 
     reportTreeDirtHistory()

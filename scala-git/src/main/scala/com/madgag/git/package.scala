@@ -8,10 +8,10 @@ import org.eclipse.jgit.treewalk.filter.{AndTreeFilter, TreeFilter}
 import java.io.File
 import org.eclipse.jgit.util.FS
 import collection.mutable
-import scala.Some
 import collection.convert.wrapAsScala._
 import language.implicitConversions
-import scala.util.{Success, Failure, Try}
+import scala.util.{Success, Try}
+import Constants.OBJ_TAG
 
 
 package object git {
@@ -49,6 +49,11 @@ package object git {
     def singleThreadedReaderTuple = {
       val revWalk=new RevWalk(repo)
       (revWalk, revWalk.getObjectReader)
+    }
+
+    def annotatedTags(implicit revWalk: RevWalk): Set[RevTag] = {
+      implicit val reader = revWalk.getObjectReader
+      repo.getTags.values.map(_.getObjectId).filter(_.open.getType == OBJ_TAG).map(_.asRevTag).toSet
     }
   }
 

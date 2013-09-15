@@ -23,7 +23,7 @@ package com.madgag.git.bfg.cli
 import scala.collection.convert.wrapAsScala._
 import org.specs2.mutable._
 import org.eclipse.jgit.lib.{Constants, ObjectReader, ObjectId, Repository}
-import org.eclipse.jgit.revwalk.RevCommit
+import org.eclipse.jgit.revwalk.{RevTag, RevCommit}
 import org.specs2.matcher.{Expectable, ContainWithResult, MustThrownMatchers, Matcher}
 import scalax.file.Path
 import com.madgag.git._
@@ -87,10 +87,21 @@ class MainSpec extends Specification {
     "replace commit and tag message text" in new unpackedRepo("/sample-repos/replaceTextInMessage.git.zip") {
       implicit val r = reader
 
-      val bannedTextFile = Path.createTempFile()
-      bannedTextFile.write("sausages==>cheese\n")
+      val bannedTextFile = newFileContaining("sausages==>cheese\n")
 
-      ensureRemovalOf(commitHistory(haveCommitWhereMessage(contain("sausages")).atLeastOnce)) {
+      ensureRemovalOf(annotatedTags(haveTagWhereMessage(contain("sausages")).atLeastOnce)) {
+        ensureRemovalOf(commitHistory(haveCommitWhereMessage(contain("sausages")).atLeastOnce)) {
+          run(s"--replace-message-text ${bannedTextFile.path}")
+        }
+      }
+    }
+
+    "update annotated tag message even if that is the only dirty thing in repo" in new unpackedRepo("/sample-repos/onlyAnnotatedTagIsDirty.git.zip") {
+      implicit val r = reader
+
+      val bannedTextFile = newFileContaining("sin==>win\n")
+
+      ensureRemovalOf(annotatedTags(haveTagWhereMessage(contain("sin")).atLeastOnce)) {
         run(s"--replace-message-text ${bannedTextFile.path}")
       }
     }
@@ -104,6 +115,12 @@ class MainSpec extends Specification {
         run("--strip-blobs-bigger-than 1K --massive-non-file-objects-sized-up-to 20M")
       }
     }
+  }
+
+  def newFileContaining(content: String) = {
+    val file = Path.createTempFile()
+    file.write(content)
+    file
   }
 }
 
@@ -148,12 +165,20 @@ class unpackedRepo(filePath: String) extends Scope with MustThrownMatchers {
     (c: RevCommit) => c.getFullMessage
   }
 
+  def haveTagWhereMessage(boom: Matcher[String])(implicit reader: ObjectReader): Matcher[RevTag] = boom ^^ {
+    (t: RevTag) => t.getFullMessage
+  }
+
   def haveRef(refName: String, objectIdMatcher: Matcher[ObjectId]): Matcher[Repository] = objectIdMatcher ^^ {
     (r: Repository) => r resolve (refName) aka s"Ref [$refName]"
   }
 
   def commitHistory(histMatcher: Matcher[Seq[RevCommit]]): Matcher[Repository] = histMatcher ^^ {
     (r: Repository) => commitHist(r)
+  }
+
+  def annotatedTags(tagMatcher: Matcher[Set[RevTag]]): Matcher[Repository] = tagMatcher ^^ {
+    (r: Repository) => r.annotatedTags
   }
 
   def ensureRemovalOfBadEggs[S,T](expr : => Traversable[S], exprResultMatcher: Matcher[Traversable[S]])(block: => T) = {

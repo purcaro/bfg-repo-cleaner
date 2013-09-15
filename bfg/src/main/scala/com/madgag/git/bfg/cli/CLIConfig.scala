@@ -28,17 +28,21 @@ import io.Source
 import com.madgag.git.bfg.GitUtil
 import org.eclipse.jgit.lib._
 import protection.ProtectedObjectCensus
-import com.madgag.git.bfg.model.{TreeSubtrees, TreeBlobs, FileName, TreeBlobEntry}
+import com.madgag.git.bfg.model._
 import com.madgag.textmatching.{Glob, TextMatcher}
 import com.madgag.inclusion._
 import com.madgag.text.ByteSize
-import scopt.immutable.OptionParser
-import scala.Some
-import com.madgag.inclusion.IncExcExpression
 import org.eclipse.jgit.internal.storage.file.FileRepository
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import com.madgag.git._
 import GitUtil._
+import com.madgag.git.bfg.cleaner.CommitNodeCleanerKit
+import scopt.immutable.OptionParser
+import com.madgag.git.bfg.model.TreeSubtrees
+import scala.Some
+import com.madgag.git.SizedObject
+import com.madgag.git.bfg.model.TreeBlobEntry
+import com.madgag.inclusion.IncExcExpression
 
 
 object CLIConfig {
@@ -64,7 +68,7 @@ object CLIConfig {
         "string other than the default of '***REMOVED***'.") {
         (v: String, c: CLIConfig) => c.copy(textReplacementExpressions = Source.fromFile(v).getLines().filterNot(_.trim.isEmpty).toSeq)
       },
-      opt("rt", "replace-message-text", "<expressions-file>", "filter content of tag and commit messages, replacing matched text. Match expressions should be listed in the file, one expression per line") {
+      opt("rmt", "replace-message-text", "<expressions-file>", "filter content of tag and commit messages, replacing matched text. Match expressions should be listed in the file, one expression per line") {
         (v: String, c: CLIConfig) => c.copy(messageTextReplacementExpressions = Source.fromFile(v).getLines().filterNot(_.trim.isEmpty).toSeq)
       },
       opt("fi", "filter-content-including", "<glob>", "do file-content filtering on files that match the specified expression (eg '*.{txt|properties}')") {
@@ -156,15 +160,26 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
       }
   }
 
-
   lazy val privateDataRemoval = sensitiveData.getOrElse(Seq(fileDeletion, folderDeletion, blobTextModifier).flatten.nonEmpty)
 
   lazy val objectIdSubstitutor = if (privateDataRemoval) ObjectIdSubstitutor.OldIdsPrivate else ObjectIdSubstitutor.OldIdsPublic
 
-  lazy val commitNodeCleaners = {
-    lazy val formerCommitFooter = if (privateDataRemoval) None else Some(FormerCommitFooter)
+  lazy val tagNodeCleaners: Seq[TagNodeCleaner] = {
+    val messageTagNodeCleaner: Option[TagNodeCleaner] = messageLineModifier.map { mc => new NodeMessageCleaner(mc) }
 
-    Seq(new CommitMessageObjectIdsUpdater(objectIdSubstitutor)) ++ formerCommitFooter
+    Seq(new TagMessageObjectIdsUpdater(objectIdSubstitutor)) ++ messageTagNodeCleaner
+  }
+
+  lazy val commitNodeCleaners: Seq[CommitNodeCleaner] = {
+    val messageCommitNodeCleaner: Option[CommitNodeCleaner] = messageLineModifier.map {
+      mc =>
+        val boo: CommitNodeCleaner = new NodeMessageCleaner[CommitNode, CommitNodeCleanerKit](mc)
+        boo
+    }
+
+    val formerCommitFooter = if (privateDataRemoval) None else Some(FormerCommitFooter)
+
+    Seq(new CommitMessageObjectIdsUpdater(objectIdSubstitutor)) ++ messageCommitNodeCleaner ++ formerCommitFooter
   }
 
   lazy val treeBlobCleaners: Seq[Cleaner[TreeBlobs]] = {
@@ -202,19 +217,10 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
   def objectIdCleanerConfig: ObjectIdCleaner.Config =
     ObjectIdCleaner.Config(
       objectProtection,
-      objectIdSubstitutor,
       commitNodeCleaners,
+      tagNodeCleaners,
       treeBlobCleaners,
       folderDeletion.toSeq,
-      messageLineModifier,
       objectChecker
     )
-
-  def describe = {
-    if (privateDataRemoval) {
-      "is removing private data, so the '" + FormerCommitFooter.Key + "' footer will not be added to commit messages."
-    } else {
-      "is only removing non-private data (eg, blobs that are just big, not private) : '" + FormerCommitFooter.Key + "' footer will be added to commit messages."
-    }
-  }
 }
